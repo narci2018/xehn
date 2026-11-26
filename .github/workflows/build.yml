@@ -58,11 +58,14 @@ jobs:
           go install github.com/akavel/rsrc@v0.10.2
           $goBin = "$(go env GOPATH)\bin"
           $rsrcFullPath = Join-Path $goBin "rsrc.exe"
-          Write-Host "rsrc full path: $rsrcFullPath"
+          Write-Host "rsrc full path(raw): $rsrcFullPath"
           if (-not (Test-Path $rsrcFullPath)) {
             throw "rsrc.exe not found after install"
           }
-          "RSRC_EXE=$rsrcFullPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $rsrcEnvPath = $rsrcFullPath -replace '\\','/'
+          "RSRC_EXE=$rsrcEnvPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "RSRC_EXE=$rsrcEnvPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Written RSRC_EXE to GITHUB_ENV: $env:RSRC_EXE"
 
       - name: Prepare core binaries and geo assets
         shell: pwsh
@@ -96,10 +99,13 @@ jobs:
 
       - name: Run pack.ps1
         shell: pwsh
-        env:
-          RSRC_EXE: ${{ steps.install-rsrc-for-resource-embedding.outputs.RSRC_EXE }}
         run: |
-          Write-Host "RSRC_EXE env: $env:RSRC_EXE"
+          Write-Host "==== DEBUG RSRC_EXE ===="
+          Write-Host "RSRC_EXE env value: '$env:RSRC_EXE'"
+          if ($env:RSRC_EXE) {
+              Write-Host "RSRC_EXE file exists: $(Test-Path $env:RSRC_EXE)"
+          }
+          Write-Host "========================"
           if (-not (Test-Path ".\pack.ps1")) {
             throw "未找到 pack.ps1，请确认仓库根目录存在打包脚本"
           }
