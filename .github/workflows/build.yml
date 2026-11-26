@@ -43,7 +43,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.25'
           cache: true
 
       - name: Run unit tests
@@ -65,37 +65,20 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path ".\core" | Out-Null
           $mihomoExe = ".\core\mihomo.exe"
-          if (-not (Test-Path $mihomoExe) -or ((Get-Item $mihomoExe).Length -lt 1MB)) {
-            $mihomoVer = "v1.19.33"
-            $releaseApi = "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/$mihomoVer"
-            $rel = Invoke-RestMethod -Uri $releaseApi -Headers @{ "User-Agent" = "xehn-ci" }
-            $asset = $rel.assets | Where-Object {
-              $_.name -match "windows-amd64" -and $_.name -match "\.zip$" -and ($_.name -notmatch "compatible")
-            } | Select-Object -First 1
-            if (-not $asset) {
-              throw "未找到 mihomo $mihomoVer 的 windows-amd64 zip 资源"
-            }
-            $tmpZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
-            $extractDir = Join-Path $env:RUNNER_TEMP "mihomo_extracted"
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip
-            Expand-Archive -Path $tmpZip -DestinationPath $extractDir -Force
-            $foundExe = Get-ChildItem -Path $extractDir -Filter "*.exe" -Recurse | Select-Object -First 1
-            if (-not $foundExe) {
-              throw "解压后未找到 mihomo 可执行文件"
-            }
-            Copy-Item -Path $foundExe.FullName -Destination $mihomoExe -Force
-          }
+          $mihomoZipUrl = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-amd64.zip"
+          $tmpZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "mihomo_extracted"
+          Invoke-WebRequest -Uri $mihomoZipUrl -OutFile $tmpZip
+          Expand-Archive -Path $tmpZip -DestinationPath $extractDir -Force
+          $foundExe = Get-ChildItem -Path $extractDir -Filter "*.exe" -Recurse | Select-Object -First 1
+          Copy-Item -Path $foundExe.FullName -Destination $mihomoExe -Force
           if (-not (Test-Path $mihomoExe) -or ((Get-Item $mihomoExe).Length -lt 1MB)) {
             throw "core\mihomo.exe 缺失或大小小于 1MB"
           }
           $geositeUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
           $geoipUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb"
-          if (-not (Test-Path ".\core\geosite.dat")) {
-            Invoke-WebRequest -Uri $geositeUrl -OutFile ".\core\geosite.dat"
-          }
-          if (-not (Test-Path ".\core\geoip.metadb")) {
-            Invoke-WebRequest -Uri $geoipUrl -OutFile ".\core\geoip.metadb"
-          }
+          Invoke-WebRequest -Uri $geositeUrl -OutFile ".\core\geosite.dat"
+          Invoke-WebRequest -Uri $geoipUrl -OutFile ".\core\geoip.metadb"
 
       - name: Run pack.ps1
         shell: pwsh
