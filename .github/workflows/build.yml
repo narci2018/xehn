@@ -67,7 +67,48 @@ jobs:
           "RSRC_EXE=$rsrcEnvPath" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "Written RSRC_EXE to GITHUB_ENV: $env:RSRC_EXE"
 
-      - name: Build xehn.exe (skip full pack, no core binaries download)
+      - name: Prepare core binaries and geo assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ".\core" | Out-Null
+          $mihomoExe = ".\core\mihomo.exe"
+          $mihomoZipUrl = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-amd64.zip"
+          $tmpZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "mihomo_extracted"
+          $downloadOk = $false
+          for($i=0;$i -lt 3;$i++){
+            Write-Host "--- Attempt $($i+1) download mihomo zip ---"
+            try{
+              Invoke-WebRequest -Uri $mihomoZipUrl -OutFile $tmpZip -TimeoutSec 120 -UseBasicParsing
+              $fInfo = Get-Item $tmpZip
+              Write-Host "Downloaded file size: $($fInfo.Length) bytes"
+              if ($fInfo.Length -gt 500000) {
+                $downloadOk = $true
+                break
+              }
+              throw "File size too small ($($fInfo.Length) bytes), not valid zip archive"
+            }catch{
+              Write-Warning "Download attempt $($i+1) failed: $_"
+              Start-Sleep 8
+            }
+          }
+          if(-not $downloadOk){
+            throw "mihomo zip download failed after 3 retries"
+          }
+          Expand-Archive -Path $tmpZip -DestinationPath $extractDir -Force
+          $foundExe = Get-ChildItem -Path $extractDir -Filter "*.exe" -Recurse | Select-Object -First 1
+          Copy-Item -Path $foundExe.FullName -Destination $mihomoExe -Force
+          if (-not (Test-Path $mihomoExe) -or ((Get-Item $mihomoExe).Length -lt 1MB)) {
+            throw "core\mihomo.exe 缺失或大小小于 1MB"
+          }
+          $geositeUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
+          $geoipUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb"
+          Invoke-WebRequest -Uri $geositeUrl -OutFile ".\core\geosite.dat" -TimeoutSec 120 -UseBasicParsing
+          Invoke-WebRequest -Uri $geoipUrl -OutFile ".\core\geoip.metadb" -TimeoutSec 120 -UseBasicParsing
+          Write-Host "=== core dir listing ==="
+          Get-ChildItem .\core
+
+      - name: Run pack.ps1
         shell: pwsh
         run: |
           Write-Host "==== DEBUG RSRC_EXE ===="
@@ -76,47 +117,46 @@ jobs:
               Write-Host "RSRC_EXE file exists: $(Test-Path $env:RSRC_EXE)"
           }
           Write-Host "========================"
-          $here = $PWD.Path
-          $dist = Join-Path $here 'dist'
-          $buildDir = Join-Path $dist 'build'
-          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-          $binOut = Join-Path $buildDir 'xehn.exe'
-          $syso = Join-Path $here 'rsrc_windows_amd64.syso'
-          $icoArgs = @()
-          if (Test-Path (Join-Path $here 'logo.ico')) { $icoArgs = @('-ico', (Join-Path $here 'logo.ico')) }
-          # run rsrc embed manifest/icon
-          & $env:RSRC_EXE -manifest (Join-Path $here 'app.manifest') @icoArgs -o $syso -arch amd64
-          if ($LASTEXITCODE -ne 0) { throw "rsrc embed failed" }
-          # compile windows gui binary
-          $env:GOOS='windows'
-          $env:GOARCH='amd64'
-          $env:CGO_ENABLED='0'
-          $ver = "${{ steps.ver.outputs.version }}"
-          go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$ver -X main.windowsGUIBuild=1" -o $binOut .
-          if ($LASTEXITCODE -ne 0) { throw "go build failed" }
-          Write-Host "Build done: $binOut"
-          Get-ChildItem $buildDir
+          if (-not (Test-Path ".\pack.ps1")) {
+            throw "未找到 pack.ps1，请确认仓库根目录存在打包脚本"
+          }
+          Get-ChildItem .
+          & ".\pack.ps1"
+          Write-Host "=== after pack.ps1, listing current dir ==="
+          Get-ChildItem . -Filter *.zip
 
       - name: Collect build artifacts
         id: pkg
         shell: pwsh
         run: |
-          $outDir = Join-Path $env:RUNNER_TEMP "dist_artifacts"
+          $outDir = Join-Path $env:RUNNER_TEMP "dist_packages"
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-          $exeSrc = Join-Path $PWD.Path "dist\build\xehn.exe"
-          Copy-Item -Path $exeSrc -Destination $outDir -Force
-          $exeOut = Join-Path $outDir "xehn-${{ steps.ver.outputs.version }}-windows-amd64.exe"
-          Rename-Item -Path (Join-Path $outDir "xehn.exe") -NewName $exeOut
-          "exe_path=$exeOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Get-ChildItem $outDir
+          $zips = Get-ChildItem -Path . -Filter "*.zip" | Where-Object { $_.FullName -notlike "$env:RUNNER_TEMP*" }
+          if ($zips.Count -gt 0) {
+            foreach ($z in $zips) {
+              Copy-Item -Path $z.FullName -Destination $outDir -Force
+            }
+          } else {
+            $ver = "${{ steps.ver.outputs.version }}"
+            $fallbackZip = Join-Path $outDir "xehn-$ver-windows-amd64.zip"
+            Compress-Archive -Path ".\*" -DestinationPath $fallbackZip -Force
+          }
+          $firstZip = Get-ChildItem -Path $outDir -Filter "*.zip" | Select-Object -First 1
+          "zip_path=$($firstZip.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Get-ChildItem -Path $outDir | Format-Table Name, Length -AutoSize
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: xehn-windows-amd64-${{ steps.ver.outputs.version }}
-          path: ${{ steps.pkg.outputs.exe_path }}
+          path: ${{ steps.pkg.outputs.zip_path }}
           retention-days: 90
 
-      # Note: full release zip bundle with mihomo core is built locally via pack.ps1,
-      # GitHub‑Actions windows runner cannot reliably download mihomo release binary from internet.
-      # Tag‑push auto‑release is disabled.
+      - name: Create GitHub Release on tag push
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/baseline-')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: ${{ steps.pkg.outputs.zip_path }}
+          generate_release_notes: true
