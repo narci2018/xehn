@@ -70,7 +70,12 @@ if (-not $SkipBuild) {
     # require themed common controls or NewMainWindow fails with
     # "TTM_ADDTOOL failed" at startup. rsrc is installed via
     #   go install github.com/akavel/rsrc@latest
-    $rsrc = Join-Path $env:GOPATH 'bin\rsrc.exe'
+    # Respect external RSRC_EXE environment variable for CI
+    if ($env:RSRC_EXE -and (Test-Path $env:RSRC_EXE)) {
+        $rsrc = $env:RSRC_EXE
+    } else {
+        $rsrc = Join-Path $env:GOPATH 'bin\rsrc.exe'
+    }
     $syso = Join-Path $here 'rsrc_windows_amd64.syso'
     $icoArgs = @()
     if (Test-Path (Join-Path $here 'logo.ico')) { $icoArgs = @('-ico', (Join-Path $here 'logo.ico')) }
