@@ -72,7 +72,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path ".\core" | Out-Null
           $mihomoExe = ".\core\mihomo.exe"
-          $mihomoZipUrl = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-amd64.zip"
+          $mihomoZipUrl = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-windows-amd64-v1.19.33.zip"
           $tmpZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
           $extractDir = Join-Path $env:RUNNER_TEMP "mihomo_extracted"
           $downloadOk = $false
