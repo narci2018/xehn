@@ -77,13 +77,19 @@ jobs:
           $extractDir = Join-Path $env:RUNNER_TEMP "mihomo_extracted"
           $downloadOk = $false
           for($i=0;$i -lt 3;$i++){
+            Write-Host "--- Attempt $($i+1) download mihomo zip ---"
             try{
-              Invoke-WebRequest -Uri $mihomoZipUrl -OutFile $tmpZip -TimeoutSec 120 -UseBasicParsing
-              $downloadOk = $true
-              break
+              & curl.exe -L --connect-timeout 20 --max-time 120 -o "$tmpZip" "$mihomoZipUrl" 2>&1
+              Write-Host "curl LASTEXITCODE: $LASTEXITCODE"
+              if ($LASTEXITCODE -eq 0 -and (Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 10000)) {
+                Write-Host "Download success, file size: $((Get-Item $tmpZip).Length)"
+                $downloadOk = $true
+                break
+              }
+              throw "curl exit $LASTEXITCODE or file too small"
             }catch{
-              Write-Warning "Download attempt $($i+1) failed, retry..."
-              Start-Sleep 5
+              Write-Warning "Download attempt $($i+1) failed: $_"
+              Start-Sleep 8
             }
           }
           if(-not $downloadOk){
@@ -97,8 +103,10 @@ jobs:
           }
           $geositeUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
           $geoipUrl = "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb"
-          Invoke-WebRequest -Uri $geositeUrl -OutFile ".\core\geosite.dat" -TimeoutSec 120 -UseBasicParsing
-          Invoke-WebRequest -Uri $geoipUrl -OutFile ".\core\geoip.metadb" -TimeoutSec 120 -UseBasicParsing
+          Write-Host "Download geosite.dat"
+          & curl.exe -L --connect-timeout 20 --max-time 120 -o ".\core\geosite.dat" "$geositeUrl" 2>&1
+          Write-Host "Download geoip.metadb"
+          & curl.exe -L --connect-timeout 20 --max-time 120 -o ".\core\geoip.metadb" "$geoipUrl" 2>&1
           Write-Host "=== core dir listing ==="
           Get-ChildItem .\core
 
